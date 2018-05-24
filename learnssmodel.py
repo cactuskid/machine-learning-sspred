@@ -1,63 +1,105 @@
 import pandas as pd
 import numpy as np
 import keras
-
 from Bio import SeqIO
+import glob
+
+from sklearn.preprocessing import OneHotEncoder
+from keras.models import Model
+from keras.layers import Input, Dense , LSTM , Bidirectional
+
+def protsec2numpy(sec, windowlen):
+	#window should be an odd number
+	#slice up the sequence into window sized chunks
+	padding = (seclen-1)/2
+	originallen = len(sec)
+	sec = ['-']*padding + sec + padding*['-']
+	sechunks=[ np.asarray(sec[i:i + window].encode()) for i in range(0, originallen)]
+	return sechunks
 
 
 
-def fastasToDF(fastas , verbose=False):
-	regex = re.compile('[^a-zA-Z0-9]')
-	regexAA = re.compile('[^ARDNCEQGHILKMFPSTWYV]')
-	DFdict={}
-	count = 0
-	total = []
-	DDF =None
+def econdedDSSP(ssStr,intdico,encoder):
+	'''
+	H = alpha-helix
+	B = residue in isolated beta-bridge
+	E = extended strand, participates in beta ladder
+	G = 3-helix (310 helix)
+	I = 5 helix (pi-helix)
+	T = hydrogen bonded turn
+	S = bend
+	'''
+	intvec = np.assarray([ intdico[char] for char in ssStr])
+	onehot = encoder.transform(intvec)
+	return onehot
+
+def datagenerator(fastas , n=100 , windowlen= 11, embeddingprot=None , embeddingSS=None):
+	#yield string for x and y to make a df block of n sequences to learn with
 	for fasta in fastas:
 		fastaIter = SeqIO.parse(fasta, "fasta")
 		for seq in fastaIter:
-		#	seqstr = regexAA.sub('', str(seq.seq))
-		#	desc =str(seq.description)
-			fastastr = '>'+str(seq.desc)+'\n'+str(seq.seq)+'\n'
-			if desc not in total:
-				#check for duclipcates within a folder
-				total.append(desc)
-				DFdict[desc] = { 'desc': desc.encode(), 'seq':seqstr, 'fasta': fastastr}
-			count +=1
-			if count % 400 == 0:
-				df = pd.DataFrame.from_dict(DFdict, orient = 'index' )
-				if df is not None and len(df)>0:
-					if DDF is None:
-						DDF = dd.from_pandas(df , chunksize = 200)
-					else:
-						DDF = dd.concat([ DDF,  dd.from_pandas(df , chunksize = 200) ] , interleave_partitions=True )
-				DFdict={}
-		else:
-			df = pd.DataFrame.from_dict(DFdict, orient = 'index')
-			if df is not None and len(df)>0:
-				if DDF is None:
-					DDF = dd.from_pandas(df , chunksize = 200)
-				else:
-					DDF = dd.concat([ DDF,  dd.from_pandas(df , chunksize = 200) ] , interleave_partitions=True)
-			DFdict={}
+			description = seq.description
+			ID = chainID[0:6]
+			if ID not in seqDict:
+				seqDict[ID]= {}
+			if 'secstr' in description:
+				seqDict[ID]['SS']= str(seq.seq)
+			else:
+				seqDict[ID]['AA']= str(seq.seq)
+			if len(seqDict)>n:
+					df = pd.from_dict(seqDict, orient= 'columns')
+					df['X'] = df['AA'].map(embeddingprot)
+					df['Y'] = df['SS'].map(embeddingSS)
+					yield df
+					seqDict={}
 
-	if verbose == True:
-		print(df)
-	return DDF
-
+#init encoder for ss
 sspath = './SSdataset/'
 fastas = glob.glob(sspath + '*.fasta')
-
 print(fastas)
-ddf = fastasToDF( fastas=fastas, verbose=True)
 
-#turn fastas intoddf
+windowlen = 11
+outdim = 30
+layers = 3
+saveinterval = 100
 
-#dump ddf to disk hdf5
 
-#reload from disk
+encoder = OneHotEncoder()
+encoder.fit( np.asarray(range(7)) )
+intdico = { charval : i for i,charval in enumerate(['H', 'B', 'E', 'G', 'I', 'T', 'S'] ) }
+ssencoder = functools.partial( econdedDSSP , intdico= intdico , encoder = encoder)
+prot2sec = functools.partial( protsec2numpy , windowlen= windowlen )
 
-#learn keras model char to char
-    #stateful?
-    #embedding?
-    
+generator = datagenerator(fastas, n = 10 , windowlen= windowlen ,  embeddingprot = embeddingprot , embeddingSS = ssencoder)
+print(next(generator))
+#define model
+#multilayer biderictional stateful lstm
+model = Model()
+layers = []
+#input is the size of one sequence window
+layer = Input((windowsize,))
+layers.append(layer)
+for n in range(nlayers):
+	layer = LSTM(outdim, activation='tanh', dropout=0.0, recurrent_dropout=0.0, return_sequences=True, return_state=False, go_backwards=False, stateful=True, unroll=False)
+	layer = Bidirectional(layer, merge_mode='concat', weights=None)
+	layers.append(layer)
+layer = LSTM(outdim, activation='tanh', dropout=0.0, recurrent_dropout=0.0, return_sequences=False, return_state=False, go_backwards=False, stateful=True, unroll=False)
+layer = Bidirectional(layer, merge_mode='concat', weights=None)
+#return state of lstm to dense layers
+Dense(7,activation = 'softmax')
+#decode topology
+
+for layer in layers:
+	model.add(layer)
+else:
+	model.compile( optimizer='RMSprop', loss='categorical_cross_entropy', metrics=['acc'])
+#dense output layer with categorical cross entropy error
+
+for i,seqDF in enumerate(generator):
+	for row in seqDF.items():
+		#learn in stateful mode over windows
+		model.train_on_batch(row.X , row.Y, verbose = True)
+		#reset
+		model.reset_states()
+	if i % saveinterval == 0:
+		model.save()
