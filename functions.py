@@ -362,7 +362,6 @@ def runOnDelayed(DF , pipeline):
 			DDF.append(dd.from_pandas(df))
 	return DDF
 
-
 def openprocess(args , inputstr =None , verbose = False , wait = True):
 	args = shlex.split(args)
 	p = subprocess.Popen(args,  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr= subprocess.PIPE )
