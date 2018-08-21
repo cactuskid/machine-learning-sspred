@@ -6,7 +6,11 @@ import glob
 import pdb
 import functools
 import functions
+import itertools
 
+from scipy import signal as sig
+from scipy.stats import bernoulli
+from scipy.signal import gaussian
 from sklearn.preprocessing import OneHotEncoder
 from keras.models import Model
 from keras.layers import Input, Dense , LSTM , Bidirectional
@@ -49,6 +53,7 @@ def seq2vec(seq, propdict, verbose = False):
 	for i,prop in enumerate(propdict):
 		vals = [ propdict[prop][char] if char in propdict[prop] else 0 for char in seq ]
 		propmat[i,:] = vals
+
 
 	if verbose == True:
 		print(propmat.T)
@@ -97,67 +102,66 @@ def fastaparse(fastafile):
 					sequence['seq'] = line.replace('\n', '')
 				else:
 					sequence['seq']+= line.replace('\n', '')
-"""
-def datagenerator(fastas , n=100 , windowlen= 13, embeddingprot=None , embeddingSS=None , Testmode=False, verbose = False):
+
+def datagenerator(fastas , windowlen= 13, clipfft = 500 , p = .01 ,singleSec2vec = None, embeddingprot=None , embeddingSS=None , Testmode=False, conv2dlstm = False, verbose = False):
 	#yield string for x and y to make a df block of n sequences to learn with
-	for fasta in fastas:
+	nGaussian = 7
+	stdv = .05
+	Gaussian = gaussian(nGaussian, stdv)
+
+	for fasta in itertools.cycle(fastas):
 		fastaIter = fastaparse(fasta)
 		seqDict={}
 		for seq in fastaIter:
-			chainID = seq['description']
-			ID = chainID[0:6]
-			if ID not in seqDict:
-				seqDict[ID]= {}
-			if 'secstr' in seq['description']:
-				if verbose == True:
-					print(len(seq['seq']))
-				seqDict[ID]['SS']= str(seq['seq'])
-			else:
-				seqDict[ID]['AA']= str(seq['seq'])
-				if verbose == True:
-					print(len(seq['seq']))
-			if Testmode == True:
-				seqDict[ID]['X'] = embeddingprot(seqDict['AA'])
-				seqDict[ID]['Y'] = embeddingSS(seqDict['SS'])
-				yield seqDict
-				seqDict ={}
+			#select random entries
+			r = bernoulli.rvs(p, size=1 )
 
-			if len(seqDict)>n:
-				df = pd.DataFrame.from_dict(seqDict, orient= 'index')
-				df['X'] = df['AA'].map(embeddingprot)
-				df['Y'] = df['SS'].map(embeddingSS)
-				df = df[ df.Y.notna()]
-				df = df[ df.X.notna()]
-				yield df
-				seqDict={}
-"""
+			if sum(r) == 1:
+				chainID = seq['description']
+				ID = chainID[0:6]
+
+				if ID not in seqDict:
+					seqDict[ID]= {}
+
+				if 'secstr' in seq['description']:
+					if verbose == True:
+						print(len(seq['seq']))
+					seqDict[ID]['SS']= str(seq['seq'])
+
+				else:
+					seqDict[ID]['AA']= str(seq['seq'])
+					if verbose == True:
+						print(len(seq['seq']))
+
+				if len(seqDict[ID])>1:
+					X = embeddingprot(seqDict[ID]['AA'])
+					Y = embeddingSS(seqDict[ID]['SS']).todense()
+					X = np.stack(X, axis =0)
+					#fft of 2d feature matrix of full sequence
+					Xfull = singleSec2vec(seqDict[ID]['AA'])
 
 
-def datagenerator(fastas , windowlen= 13, embeddingprot=None , embeddingSS=None , Testmode=False, conv2dlstm = False, verbose = False):
-	#yield string for x and y to make a df block of n sequences to learn with
-	for fasta in fastas:
-		fastaIter = fastaparse(fasta)
-		seqDict={}
-		for seq in fastaIter:
-			chainID = seq['description']
-			ID = chainID[0:6]
-			if ID not in seqDict:
-				seqDict[ID]= {}
-			if 'secstr' in seq['description']:
-				if verbose == True:
-					print(len(seq['seq']))
-				seqDict[ID]['SS']= str(seq['seq'])
-			else:
-				seqDict[ID]['AA']= str(seq['seq'])
-				if verbose == True:
-					print(len(seq['seq']))
-			if len(seqDict[ID])>1:
-				X = embeddingprot(seqDict[ID]['AA'])
-				Y = embeddingSS(seqDict[ID]['SS']).todense()
-				X = np.stack(X, axis =0)
-				if verbose == True:
-					print(Y.shape)
-					print(X.shape)
-				if X.shape[0] > 1:
-						yield ID,X, Y
-				seqDict={}
+					for i in range(Xfull.shape[0]):
+						Xfull[i,:] = sig.fftconvolve(Xfull[i,:], Gaussian , mode='same')
+
+					FFTX = np.fft.fft2(Xfull).T
+					print(FFTX.shape)
+					if FFTX.shape[1]-1 < clipfft:
+						FFTX = np.hstack( [FFTX , np.zeros( ( FFTX.shape[0] , clipfft - FFTX.shape[1] ))] )
+
+					FFTX= FFTX[:, 0:clipfft].ravel()
+
+					#add a fe descriptors of the overall data here
+					#%each amino acid
+					#PI
+					#
+					count = [len(X), ]
+
+					if verbose == True:
+						print(FFTX.shape)
+						print(Y.shape)
+						print(X.shape)
+
+					if X.shape[0] > 1:
+							yield ID,X,FFTX, Y
+					seqDict={}
