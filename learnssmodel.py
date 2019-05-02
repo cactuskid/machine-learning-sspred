@@ -16,10 +16,8 @@ from keras.layers import Input, Dense , LSTM , Bidirectional , ConvLSTM2D , conc
 
 from keras.callbacks import Callback as Callback
 
-
-
 #init encoder for ss
-sspath = '/home/cactuskid/Dropbox/machine_learning/SSdataset/'
+sspath = './SSdataset/'
 fastas = glob.glob(sspath +'*.txt')
 print(fastas)
 
@@ -32,8 +30,7 @@ with tf.Session(config=tf.ConfigProto( intra_op_parallelism_threads=4)) as sess:
 	#window of amino acids to inspect in lstm
 	#must be an odd number
 
-	windowlen = 21
-
+	windowlen = 11
 	#first part of the network, layered lstm
 	LSTMoutdim = 200
 	LSTMlayers = 5
@@ -53,13 +50,10 @@ with tf.Session(config=tf.ConfigProto( intra_op_parallelism_threads=4)) as sess:
 
 	verbose = False
 	verbose_train = False
-	#todo finish conv lstm implementation
-	conv2dlstm = False
-	kernel_size = 4
 
 
 
-	proppath = '/home/cactuskid/Dropbox/machine_learning/physicalpropTable.csv'
+	proppath = './physicalpropTable.csv'
 	propdict = functions.loadDict(proppath)
 	encoder = OneHotEncoder()
 
@@ -68,68 +62,27 @@ with tf.Session(config=tf.ConfigProto( intra_op_parallelism_threads=4)) as sess:
 	ssencoder = functools.partial( SSfunctions.econdedDSSP , intdico= intdico , encoder = encoder, verbose = False)
 	prot2sec = functools.partial( SSfunctions.protsec2numpy , windowlen= windowlen , propdict= propdict, verbose =False )
 	prot2prot2secSingle = functools.partial( SSfunctions.seq2vec , propdict= propdict, verbose =False )
-
-	generator = SSfunctions.datagenerator(fastas , singleSec2vec = prot2prot2secSingle, clipfft =fft_freqcutoff,windowlen= windowlen ,  embeddingprot = prot2sec , embeddingSS = ssencoder , conv2dlstm = conv2dlstm, verbose = False )
-
-	#define model
-	#multilayer biderictional stateful lstm
-
-	#todo: change to one categorical input and one matrix inputThe truncated or zero-padded input, transformed along the axes indicated by axes, or the last two axes if axes is not given.
+	generator = SSfunctions.datagenerator(fastas , singleSec2vec = prot2prot2secSingle, clipfft =fft_freqcutoff,windowlen= windowlen ,  embeddingprot = prot2sec , embeddingSS = ssencoder , conv2dlstm = False, verbose = False )
 
 	layeroutputs = {}
-
-	if conv2dlstm == False:
-		#(batch_size, timesteps, input_dim)
-		window = Input(name='seqin', batch_shape=(1, windowlen, len(propdict)  )  )
-	else:
-		window = Input(name='seqin', batch_shape=(1,1,windowlen, len(propdict) , 1 ) )
-
-	#input is the size of one sequence windowelse:try:
-	#x = concatenate([x,inputs], axis=-1)
+	window = Input(name='seqin', batch_shape=(1, windowlen, len(propdict)  )  )
 	position1 = Input(name='position1' , batch_shape = (1,windowlen, 1) )
-
 	inputs = concatenate([window, position1], axis= -1 )
 
 	for n in range(LSTMlayers):
 		if n == 0:
-			if conv2dlstm == False:
-				layer = LSTM(LSTMoutdim ,name='lstm_'+str(n),activation='tanh', dropout=0.0, recurrent_dropout=0.0, return_sequences=True,
-				return_state=False, go_backwards=False, stateful=True, unroll=True)
-				x = layer(inputs)
-
-				layer = LSTM(LSTMoutdim ,name='lstm_'+str(n)+'back',activation='tanh', dropout=0.0, recurrent_dropout=0.0, return_sequences=True,
-				return_state=False, go_backwards=True, stateful=True, unroll=True)
-				x = layer(x)
-
-				layer = Bidirectional(layer, merge_mode='concat', weights=None)
-
-			else:
-				layer = ConvLSTM2D(LSTMoutdim, kernel_size, name ='lstm_'+str(n)+'back', strides=(1, 1), padding='valid', data_format=None, dilation_rate=(1, 1), activation='relu', recurrent_activation='hard_sigmoid', use_bias=True, kernel_initializer='glorot_uniform', recurrent_initializer='orthogonal',
-				 bias_initializer='zeros', unit_forget_bias=True, kernel_regularizer=None, recurrent_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, recurrent_constraint=None, bias_constraint=None, return_sequences=True,
-				 go_backwards=False, stateful=True, dropout=0.0, recurrent_dropout=0.0)
-
-			x = layer(x)
-			#print(inputs)
+			layer = LSTM(LSTMoutdim ,name='lstm_'+str(n),activation='relu', dropout=0.0, recurrent_dropout=0.0, return_sequences=True,
+			return_state=False, go_backwards=False, stateful=True, unroll=False)
+			layer = Bidirectional(layer, merge_mode='sum', weights=None)
+			x = layer(inputs)
 		else:
-			if conv2dlstm == False:
-				layer = LSTM(LSTMoutdim, activation='tanh', name='lstm_'+str(n), dropout=0.1, recurrent_dropout=0.1, return_sequences=True, return_state=False, go_backwards=False, stateful=True, unroll=True)
-				#layer = Bidirectional(layer, merge_mode='concat', weights=None)
-			else:
-				layer = ConvLSTM2D(LSTMoutdim, kernel_size, name ='lstm_'+str(n), strides=(1, 1), padding='valid', data_format=None, dilation_rate=(1, 1), activation='tanh', recurrent_activation='hard_sigmoid', use_bias=True, kernel_initializer='glorot_uniform', recurrent_initializer='orthogonal',
-				 bias_initializer='zeros', unit_forget_bias=True, kernel_regularizer=None, recurrent_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, recurrent_constraint=None, bias_constraint=None, return_sequences=True,
-			 go_backwards=False, stateful=True, dropout=0.0, recurrent_dropout=0.0)
-				x = layer(x)
-
-				layer = ConvLSTM2D(LSTMoutdim, kernel_size, name ='lstm_'+str(n)+'back', strides=(1, 1), padding='valid', data_format=None, dilation_rate=(1, 1), activation='tanh', recurrent_activation='hard_sigmoid', use_bias=True, kernel_initializer='glorot_uniform', recurrent_initializer='orthogonal',
-				  bias_initializer='zeros', unit_forget_bias=True, kernel_regularizer=None, recurrent_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, recurrent_constraint=None, bias_constraint=None, return_sequences=True,
-			  go_backwards=True, stateful=True, dropout=0.0, recurrent_dropout=0.0)
-			  	x = layer(x)
-
-				layer = Bidirectional(layer, merge_mode='concat', weights=None)
-
+			layer = LSTM(LSTMoutdim, activation='relu', name='lstm_'+str(n), dropout=0.1, recurrent_dropout=0.1,
+			return_sequences=True, return_state=False, go_backwards=False, stateful=True, unroll=False)
+			layer = Bidirectional(layer, merge_mode='sum', weights=None)
 			x = layer(x)
 		layeroutputs[n]= x
-	layer = LSTM(LSTMoutdim ,name='lstm_final' ,activation='tanh', dropout=0.0, recurrent_dropout=0.0, return_sequences=False, return_state=True, go_backwards=False, stateful=True, unroll=True)
+	layer = LSTM(LSTMoutdim ,name='lstm_final' ,activation='relu', dropout=0.0, recurrent_dropout=0.0, return_sequences=False,
+	 return_state=True, go_backwards=False, stateful=True, unroll=False)
 	x,_,_ = layer(x)
 	layeroutputs[LSTMlayers+1]= x
 	auxiliary_output = Dense(8, activation='softmax', name='aux_output')(x)
@@ -150,11 +103,9 @@ with tf.Session(config=tf.ConfigProto( intra_op_parallelism_threads=4)) as sess:
 		else:
 			x = Dense(Denseoutdim,  name = 'Dense_'+str(n) ,  activation='tanh')(x)
 			layeroutputs['Dense_'+str(n)] = x
-
 	#output to SS pred
 	layer = Dense(8, name = 'output', activation = 'softmax')
 	output = layer(x)
-
 	layeroutputs['final']= x
 
 

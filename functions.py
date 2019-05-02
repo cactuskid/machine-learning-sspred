@@ -15,7 +15,6 @@ import pickle
 import random
 import itertools
 
-
 import re, string
 
 from keras.models import Sequential
@@ -643,13 +642,11 @@ def fastasToDF(fastas , verbose=False, ecodDB = False):
 
 ########################################################################vis
 
-from matplotlib import pyplot as plt
+"""from matplotlib import pyplot as plt
 
 def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues , outdir = './'):
-	"""
-	This function prints and plots the confusion matrix.
-	Normalization can be applied by setting `normalize=True`.
-	"""
+	#This function prints and plots the confusion matrix.
+	#Normalization can be applied by setting `normalize=True`.
 	plt.clf()
 
 	if normalize:
@@ -673,3 +670,4 @@ def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix'
 	plt.ylabel('True label')
 	plt.xlabel('Predicted label')
 	plt.savefig(outdir + str(len(classes))+title+'_classConfusion.png')
+"""

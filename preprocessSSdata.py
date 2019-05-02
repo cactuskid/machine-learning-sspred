@@ -9,7 +9,7 @@ recompile_joint_file = True
 
 extract_protsequences == True:
     #grab only the prot sequences
-    
+
 
 cluster_sequences == True:
     #cdhit

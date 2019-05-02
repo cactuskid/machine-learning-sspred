@@ -23,7 +23,7 @@ def protsec2numpy(sec, windowlen, propdict=None, verbose= False):
 		originallen = len(sec)
 	except TypeError:
 		return None
-	sec = ''.join(['-']*padding) + sec + ''.join(padding*['-'])
+	sec = ''.join(['-']*int(padding)) + sec + ''.join(int(padding)*['-'])
 	if verbose == True:
 		print(sec)
 		print(len(sec))
@@ -96,7 +96,7 @@ def fastaparse(fastafile):
 				if len(sequence)> 0:
 					yield sequence
 					sequence = {}
- 				sequence['description']= line[1:]
+				sequence['description']= line[1:]
 			else:
 				if 'seq' not in sequence:
 					sequence['seq'] = line.replace('\n', '')
