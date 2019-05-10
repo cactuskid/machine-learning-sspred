@@ -21,7 +21,7 @@ def generate_DSSP_distmat( pdbdum ):
                 dists[chain]=(dist)
             #run dssp on struct get solv, SS, phi, psi
             dssp = DSSP(model, file)
-            seq = 
+            seq =
 
             #run hhblits her and get HMM
 
